@@ -1,15 +1,13 @@
-#include "cuda_runtime.h"
+#include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <stdio.h>
 
-using namespace std;
-//#define N (33 * 1024)
 #define N 10
 #define imin(a, b) (a<b?a:b)
 const int threadsPerBlock = 256;
 const int blocksPerGrid = imin(32, (N + threadsPerBlock - 1) / threadsPerBlock);
 
-__global__ void dod(float *a, float *b, float *c, float *myTemp) {
+__global__ void kernel(float *a, float *b, float *c) {
 	__shared__ float cache[threadsPerBlock];
 
 	int tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -40,20 +38,18 @@ __global__ void dod(float *a, float *b, float *c, float *myTemp) {
 
 }
 
+
 int main(void) {
-	//int a[N], b[N], c[N];
-	float *a, *b, c, *partial_c, *temp;
-	float *dev_a, *dev_b, *dev_partial_c, *dev_temp;
-	int size = 50;
+	float *a, *b, c, *partial_c;
+	float *dev_a, *dev_b, *dev_partial_c;
+
 	a = (float*)malloc(N * sizeof(float));
 	b = (float*)malloc(N * sizeof(float));
 	partial_c = (float*)malloc(blocksPerGrid * sizeof(float));
-	temp = (float*)malloc(size * sizeof(float));
 
 	cudaMalloc((void**)&dev_a, N * sizeof(float));
 	cudaMalloc((void**)&dev_b, N * sizeof(float));
 	cudaMalloc((void**)&dev_partial_c, blocksPerGrid * sizeof(float));
-	cudaMalloc((void**)&dev_temp, size * sizeof(float));
 
 	for (int i = 0; i < N; i++) {
 		a[i] = i;
@@ -63,19 +59,21 @@ int main(void) {
 	cudaMemcpy(dev_a, a, N * sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(dev_b, b, N * sizeof(float), cudaMemcpyHostToDevice);
 
-	dod << <blocksPerGrid, threadsPerBlock >> > (dev_a, dev_b, dev_partial_c, dev_temp);
+	kernel << <blocksPerGrid, threadsPerBlock >> > (dev_a, dev_b, dev_partial_c);
 
 	cudaMemcpy(partial_c, dev_partial_c, blocksPerGrid * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(temp, dev_temp, size * sizeof(float), cudaMemcpyDeviceToHost);
-
 	c = 0;
 	for (int i = 0; i < blocksPerGrid; i++) {
 		c += partial_c[i];
 	}
 
-
-#define sum_squares(x) (x*(x+1)*(2*x+1/6))
-	printf("Czy GPU %.6g = %.6g CPU?\n", c, 2 * sum_squares((float)(N - 1)));
+	printf("Matrix A: ");
+	for (int i = 0; i < N; i++)
+		printf("%.0f ", a[i]);
+	printf("\nMatrix B: ");
+	for (int i = 0; i < N; i++)
+		printf("%.0f ", b[i]);
+	printf("\nA * B: %.0f", c);
 
 	cudaFree(dev_a);
 	cudaFree(dev_b);
